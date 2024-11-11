@@ -1,4 +1,3 @@
-
 import 'extensions.dart';
 import 'hyphenator_resource_loader.dart';
 import 'pattern.dart';
@@ -116,68 +115,90 @@ class Hyphenator {
     return _hyphenateByMaskToList(inputWord, hyphenationMask);
   }
 
+  Map<String, List<int>> _patternCache = {};
+
   List<int> _generateLevelsForWord(String word) {
-    final wordString = '$_startEndMarker$word$_startEndMarker';
+  final wordString = '$_startEndMarker$word$_startEndMarker';
+  final levels = List.filled(wordString.length, 0);
 
-    final levels = List.filled(wordString.length, 0);
+  for (int i = 0; i < wordString.length - 2; ++i) {
+    for (int count = 1; count <= wordString.length - i; ++count) {
+      var patternFromWord = wordString.substring(i, i + count);
 
-    for (int i = 0; i < wordString.length - 2; ++i) {
-      int patternIndex = 0;
+      // Check cache first
+      if (_patternCache.containsKey(patternFromWord)) {
+        _updateLevelsFromCache(levels, _patternCache[patternFromWord]!, i);
+        continue;
+      }
 
-      for (int count = 1; count <= wordString.length - i; ++count) {
-        var patternFromWord = Pattern(wordString.substring(i, i + count));
+      var pattern = Pattern(patternFromWord);
 
-        if (patternFromWord.compareTo(_patterns[patternIndex]) < 0) continue;
+      // Use binary search for pattern matching
+      int patternIndex = _binarySearchPattern(pattern);
 
-        patternIndex = _patterns.indexWhere(
-          (pattern) => pattern.compareTo(patternFromWord) > 0,
-          patternIndex,
-        );
+      if (patternIndex == -1) break;
 
-        if (patternIndex == -1) break;
-
-        if (patternFromWord.compareTo(_patterns[patternIndex]) >= 0)
-          for (int levelIndex = 0;
-              levelIndex < _patterns[patternIndex].levelsCount - 1;
-              ++levelIndex) {
-            int level = _patterns[patternIndex].levelByIndex(levelIndex)!;
-
-            if (level > levels[i + levelIndex]) levels[i + levelIndex] = level;
-          }
+      if (pattern.compareTo(_patterns[patternIndex]) >= 0) {
+        List<int> patternLevels = [];
+        for (int levelIndex = 0;
+            levelIndex < _patterns[patternIndex].levelsCount - 1;
+            ++levelIndex) {
+          int level = _patterns[patternIndex].levelByIndex(levelIndex)!;
+          patternLevels.add(level);
+          if (level > levels[i + levelIndex]) levels[i + levelIndex] = level;
+        }
+        // Cache the pattern levels
+        _patternCache[patternFromWord] = patternLevels;
       }
     }
-    return levels;
+  }
+  return levels;
+  }
+
+  int _binarySearchPattern(Pattern pattern) {
+  int low = 0;
+  int high = _patterns.length - 1;
+
+  while (low <= high) {
+    int mid = (low + high) ~/ 2;
+    int cmp = _patterns[mid].compareTo(pattern);
+
+    if (cmp < 0) {
+      low = mid + 1;
+    } else if (cmp > 0) {
+      high = mid - 1;
+    } else {
+      return mid;
+    }
+  }
+  return low < _patterns.length ? low : -1;
+  }
+
+  void _updateLevelsFromCache(List<int> levels, List<int> cachedLevels, int startIndex) {
+  for (int i = 0; i < cachedLevels.length; i++) {
+    if (cachedLevels[i] > levels[startIndex + i]) {
+      levels[startIndex + i] = cachedLevels[i];
+    }
+  }
   }
 
   List<int> _hyphenatedMaskFromLevels(List<int> levels) {
-    int length = levels.length - 2;
+  int length = levels.length - 2;
+  final hyphenationMask = List<int>.filled(length, 0);
 
-    final hyphenationMask = List<int>.filled(length, 0);
-    hyphenationMask[0] = 0;
+  for (int i = 1; i < length; i++) {
+    if (levels[i + 1] % 2 != 0) hyphenationMask[i] = 1;
+  }
 
-    for (int i = 1; i < length; i++) {
-      if (levels[i + 1] % 2 != 0) hyphenationMask[i] = 1;
-    }
-
-    return hyphenationMask;
+  return hyphenationMask;
   }
 
   void _correctHyphenationMask(List<int> mask) {
-    if (mask.length > minLetterCount) {
-      for (int i = 0; i < minLetterCount; i++) {
-        mask[i] = 0;
-      }
-
-      final correctionLength = minLetterCount > 0 ? minLetterCount - 1 : 0;
-
-      for (int i = mask.length - correctionLength; i < mask.length; i++) {
-        mask[i] = 0;
-      }
-    } else {
-      for (int i = 0; i < mask.length; i++) {
-        mask[i] = 0;
-      }
+  if (mask.length > minLetterCount) {
+    for (int i = 0; i < minLetterCount; i++) {
+      mask[i] = 0;
     }
+  }
   }
 
   String _hyphenateByMask(String word, List<int>? mask) {
@@ -207,3 +228,4 @@ class Hyphenator {
 
   bool _isNotNeedHyphenate(String input) => input.length < minWordLength;
 }
+
